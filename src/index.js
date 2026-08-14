@@ -57,10 +57,11 @@ async function fetchWithCache(url, cacheFilename) {
 /**
  * Discover book URLs across the first MAX_CATALOGUE_PAGES catalogue pages,
  * following the site's own "next" link but stopping at the page limit
- * required by this assignment's scope.
+ * required by this assignment's scope. Keeps track of which catalogue page
+ * each book URL was first found on, for provenance.
  */
 async function discoverBookUrls() {
-  const bookUrls = new Set();
+  const urlToSourcePage = new Map();
   let pageNumber = 1;
   let pageUrl = "https://books.toscrape.com/catalogue/page-1.html";
   let pagesVisited = 0;
@@ -75,7 +76,9 @@ async function discoverBookUrls() {
     $("article.product_pod h3 a").each((_, el) => {
       const href = $(el).attr("href");
       const absoluteUrl = new URL(href, pageUrl).toString();
-      bookUrls.add(absoluteUrl);
+      if (!urlToSourcePage.has(absoluteUrl)) {
+        urlToSourcePage.set(absoluteUrl, pageUrl);
+      }
     });
 
     const nextHref = $("li.next a").attr("href");
@@ -87,15 +90,83 @@ async function discoverBookUrls() {
     }
   }
 
-  return { bookUrls: Array.from(bookUrls), pagesVisited };
+  return { urlToSourcePage, pagesVisited };
+}
+
+/**
+ * Turn a book detail URL into a safe, unique cache filename, using the
+ * book's own slug from its URL rather than inventing one.
+ */
+function cacheFilenameForBookUrl(url) {
+  const parts = new URL(url).pathname.split("/").filter(Boolean);
+  const slug = parts[parts.length - 2] || "unknown-book";
+  return `book-${slug}.html`;
+}
+
+/**
+ * Extract the 8 raw fields for a single book detail page. Selectors are
+ * aimed at the product area (div.product_main / #product_description),
+ * not the whole document, so they don't accidentally grab an unrelated
+ * price or heading elsewhere on the page.
+ */
+function extractRawRecord(html, productUrl, sourcePage) {
+  const $ = cheerio.load(html);
+  const main = $("div.product_main");
+
+  const title = main.find("h1").text().trim();
+  const priceText = main.find("p.price_color").first().text().trim();
+
+  const availabilityText = main
+    .find("p.availability")
+    .text()
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const ratingClass = main.find("p.star-rating").attr("class") || "";
+  const ratingText = ratingClass.replace("star-rating", "").trim() || null;
+
+  const descriptionParagraph = $("#product_description").next("p");
+  const description = descriptionParagraph.length
+    ? descriptionParagraph.text().trim()
+    : null;
+
+  return {
+    title,
+    product_url: productUrl,
+    price_text: priceText,
+    availability_text: availabilityText,
+    rating_text: ratingText,
+    description,
+    source_page: sourcePage,
+    fetched_at: new Date().toISOString(),
+  };
+}
+
+async function extractAllBooks(urlToSourcePage) {
+  const records = [];
+
+  for (const [bookUrl, sourcePage] of urlToSourcePage.entries()) {
+    const cacheFilename = cacheFilenameForBookUrl(bookUrl);
+    const html = await fetchWithCache(bookUrl, cacheFilename);
+    const record = extractRawRecord(html, bookUrl, sourcePage);
+    records.push(record);
+  }
+
+  return records;
 }
 
 async function main() {
-  const { bookUrls, pagesVisited } = await discoverBookUrls();
+  const { urlToSourcePage, pagesVisited } = await discoverBookUrls();
 
   console.log(`catalogue_pages=${pagesVisited}`);
-  console.log(`discovered=${bookUrls.length}`);
-  console.log(`unique_urls=${bookUrls.length}`);
+  console.log(`discovered=${urlToSourcePage.size}`);
+  console.log(`unique_urls=${urlToSourcePage.size}`);
+
+  const records = await extractAllBooks(urlToSourcePage);
+
+  console.log("--- sample record ---");
+  console.log(JSON.stringify(records[0], null, 2));
+  console.log(`detail_pages=${records.length}`);
 }
 
 main().catch((err) => {
