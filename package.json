@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/abdulwasay-77/Flyrank-Week5-Assignment#readme",
   "dependencies": {
-    "cheerio": "^1.2.0"
+    "cheerio": "^1.2.0",
+    "zod": "^4.4.3"
   }
 }

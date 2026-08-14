@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const cheerio = require("cheerio");
+const { z } = require("zod");
 
 const USER_AGENT = "FlyRankInternshipA5/1.0 (+https://github.com/abdulwasay-77/Flyrank-Week5-Assignment)";
 const TIMEOUT_MS = 8000;
@@ -8,6 +9,7 @@ const DELAY_MS = 500;
 const MAX_CATALOGUE_PAGES = 3;
 
 const CACHE_DIR = path.join(__dirname, "..", "cache");
+const OUTPUT_DIR = path.join(__dirname, "..", "output");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -155,6 +157,92 @@ async function extractAllBooks(urlToSourcePage) {
   return records;
 }
 
+/**
+ * Turn "£51.77" into 51.77. Returns null if the text can't be parsed,
+ * so validation can reject it explicitly rather than silently storing NaN.
+ */
+function parsePriceGbp(priceText) {
+  const match = priceText.replace(/[^0-9.]/g, "");
+  const value = parseFloat(match);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Normalize a raw record into the clean shape, keeping the original text
+ * fields alongside the new numeric/derived ones.
+ */
+function normalizeRecord(raw) {
+  return {
+    ...raw,
+    price_gbp: parsePriceGbp(raw.price_text),
+  };
+}
+
+// Schema for a finished, storable record. product_url is this record's
+// canonical URL / identity.
+const BookRecordSchema = z.object({
+  title: z.string().min(1),
+  product_url: z.string().url().startsWith("https://"),
+  price_text: z.string().min(1),
+  price_gbp: z.number().positive(),
+  availability_text: z.string().min(1),
+  rating_text: z.string().nullable(),
+  description: z.string().nullable(),
+  source_page: z.string().url().startsWith("https://"),
+  fetched_at: z.string().datetime(),
+});
+
+/**
+ * Validate every normalized record against the schema. Valid records go to
+ * one array, invalid ones to another with a human-readable reason. Also
+ * dedupes by canonical URL (product_url), keeping the first occurrence,
+ * so the same book never counts twice even across runs.
+ */
+function validateRecords(normalizedRecords) {
+  const validRecords = [];
+  const invalidRecords = [];
+  const seenUrls = new Set();
+
+  for (const record of normalizedRecords) {
+    if (seenUrls.has(record.product_url)) {
+      invalidRecords.push({ record, reason: "Duplicate product_url" });
+      continue;
+    }
+
+    const result = BookRecordSchema.safeParse(record);
+    if (result.success) {
+      validRecords.push(result.data);
+      seenUrls.add(record.product_url);
+    } else {
+      const reason = result.error.issues
+        .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+        .join("; ");
+      invalidRecords.push({ record, reason });
+    }
+  }
+
+  return { validRecords, invalidRecords };
+}
+
+function writeOutput(validRecords, invalidRecords) {
+  if (!fs.existsSync(OUTPUT_DIR)) {
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  }
+
+  // Always overwrite (never append), so reruns produce the same set of
+  // records instead of duplicating them — that's what makes this idempotent.
+  fs.writeFileSync(
+    path.join(OUTPUT_DIR, "books.json"),
+    JSON.stringify(validRecords, null, 2),
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(OUTPUT_DIR, "errors.json"),
+    JSON.stringify(invalidRecords, null, 2),
+    "utf8"
+  );
+}
+
 async function main() {
   const { urlToSourcePage, pagesVisited } = await discoverBookUrls();
 
@@ -162,11 +250,16 @@ async function main() {
   console.log(`discovered=${urlToSourcePage.size}`);
   console.log(`unique_urls=${urlToSourcePage.size}`);
 
-  const records = await extractAllBooks(urlToSourcePage);
+  const rawRecords = await extractAllBooks(urlToSourcePage);
+  console.log(`detail_pages=${rawRecords.length}`);
 
-  console.log("--- sample record ---");
-  console.log(JSON.stringify(records[0], null, 2));
-  console.log(`detail_pages=${records.length}`);
+  const normalizedRecords = rawRecords.map(normalizeRecord);
+  const { validRecords, invalidRecords } = validateRecords(normalizedRecords);
+
+  writeOutput(validRecords, invalidRecords);
+
+  console.log(`valid_records=${validRecords.length}`);
+  console.log(`invalid_records=${invalidRecords.length}`);
 }
 
 main().catch((err) => {
