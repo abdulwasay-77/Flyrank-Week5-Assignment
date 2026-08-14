@@ -17,5 +17,8 @@
   "bugs": {
     "url": "https://github.com/abdulwasay-77/Flyrank-Week5-Assignment/issues"
   },
-  "homepage": "https://github.com/abdulwasay-77/Flyrank-Week5-Assignment#readme"
+  "homepage": "https://github.com/abdulwasay-77/Flyrank-Week5-Assignment#readme",
+  "dependencies": {
+    "cheerio": "^1.2.0"
+  }
 }
