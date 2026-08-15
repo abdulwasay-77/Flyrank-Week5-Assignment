@@ -1,17 +1,12 @@
 {
-  "start_time": "2026-08-15T13:32:47.255Z",
-  "duration_ms": 3062,
+  "start_time": "2026-08-15T13:35:28.016Z",
+  "duration_ms": 276,
   "catalogue_pages_visited": 3,
-  "unique_book_urls_discovered": 61,
+  "unique_book_urls_discovered": 60,
   "pages_fetched": 0,
   "cache_hits": 63,
   "valid_records": 60,
   "invalid_records": 0,
-  "failed_pages": 1,
-  "failed_page_details": [
-    {
-      "url": "https://books.toscrape.com/catalogue/this-book-does-not-exist_9999/index.html",
-      "reason": "Status 404"
-    }
-  ]
+  "failed_pages": 0,
+  "failed_page_details": []
 }

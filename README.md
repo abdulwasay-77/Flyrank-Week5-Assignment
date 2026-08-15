@@ -26,6 +26,92 @@ pages, and turns the messy HTML into clean, schema-checked JSON.
 I will not reuse this code on another site without checking its rules and
 terms first.
 
-## Status
+## Lane & requirements
 
-🚧 Work in progress — stages will be documented here as they're completed.
+- **Language:** Node.js (JavaScript lane)
+- **Dependencies:** `cheerio` (HTML parsing), `zod` (schema validation) — both
+  installed via npm, no other services or accounts required
+
+## How to run
+
+```powershell
+git clone https://github.com/abdulwasay-77/Flyrank-Week5-Assignment.git
+cd Flyrank-Week5-Assignment
+npm install
+node src/index.js
+```
+
+This produces `output/books.json`, `output/errors.json`, and
+`output/run-report.json`. Re-running the same command is safe — it reads from
+`cache/` instead of re-fetching, and rewrites the same 60 records rather than
+duplicating them.
+
+## Record schema
+
+Each entry in `books.json` has:
+
+| Field                | Type              | Notes                                        |
+|-----------------------|-------------------|-----------------------------------------------|
+| `title`               | string            | Book title                                     |
+| `product_url`         | string (URL)      | Canonical identity of the record               |
+| `price_text`          | string            | Original price as shown on the page            |
+| `price_gbp`           | number            | Parsed numeric price                           |
+| `availability_text`   | string            | Original stock text                            |
+| `rating_text`         | string or null    | Star rating as a word (e.g. "Three")           |
+| `description`         | string or null    | `null` when the book has no description        |
+| `source_page`         | string (URL)      | Which catalogue page this book was found on     |
+| `fetched_at`          | string (ISO 8601) | When this record was fetched                   |
+
+Records that fail this schema are written to `errors.json` with a reason
+instead of `books.json`.
+
+## Politeness rules
+
+- Every real request sends an identifying user-agent:
+  `FlyRankInternshipA5/1.0 (+https://github.com/abdulwasay-77/Flyrank-Week5-Assignment)`
+- Every request has an 8-second timeout — nothing waits forever
+- At least 500ms between real requests to the site; cached pages never
+  trigger a delay, since they never leave the machine
+- Status codes are checked before any parsing; only `200` is treated as
+  a valid page
+- Timeouts and `5xx` errors are retried once; `404` and `403` are never
+  retried
+
+## Honest limitation
+
+At least one book's description text on the source site contains a repeated
+sentence (visible in the raw HTML itself, not introduced by this scraper).
+The scraper stores exactly what the page contains — it does not invent or
+"clean up" text beyond whitespace trimming, so this duplication is preserved
+as-is in `books.json`.
+
+## Sample run report
+
+```json
+{
+  "start_time": "2026-08-15T13:35:28.016Z",
+  "duration_ms": 276,
+  "catalogue_pages_visited": 3,
+  "unique_book_urls_discovered": 60,
+  "pages_fetched": 0,
+  "cache_hits": 63,
+  "valid_records": 60,
+  "invalid_records": 0,
+  "failed_pages": 0,
+  "failed_page_details": []
+}
+```
+
+## Why this assignment needed no browser
+
+The data used by this scraper is already present in the HTML the server
+sends on first response — there is no JavaScript rendering step that adds
+fields after page load. A headless browser would only add cost (memory, CPU,
+and run time) with no extra data gained.
+
+## Ethics note
+
+This scraper only touches a public sandbox built for practising scraping. In
+general: prefer an official API when one exists, never bypass logins,
+paywalls, or explicit blocks, and collect only the data actually needed for
+the task at hand.
